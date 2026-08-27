@@ -350,7 +350,16 @@ INTERVALO_MINUTOS = int(os.getenv("INTERVALO_MINUTOS", 180))
 # pra ~30%, o que na PRIMEIRA execução (banco sem nenhuma vaga de
 # dev vista ainda) viraria 50+ mensagens seguidas e risco de rate
 # limit do bot. O resto não some: cai no digest diário ranqueado.
-LIMIAR_DIGEST_IMEDIATO = 9
+#
+# CORRIGIDO PRA 8 com dado do primeiro ciclo real (294 vagas):
+# score 8=46, 7=74, 6=77, 5=55, 4=16, 3=11, 2=14, 1=1 — NADA em 9.
+# O teto prático é 8 porque score 9 exige _PESO_MERCADO (+2), que só
+# entra quando o texto DECLARA o mercado ("Remote - Brazil"); vaga
+# remota brasileira quase nunca declara e cai em
+# _PESO_MERCADO_NAO_CONFIRMADO (+1). Com 9 a notificação imediata
+# ficava desligada na prática — tudo ia pro digest. Com 8 são as 46
+# melhores na hora (16% das aprovadas).
+LIMIAR_DIGEST_IMEDIATO = 8
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
