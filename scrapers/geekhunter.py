@@ -63,13 +63,38 @@ class GeekHunterScraper(BaseScraper):
                     try:
                         page.wait_for_selector('a[href*="/jobs/"]', timeout=15000)
                     except PlaywrightTimeoutError:
-                        if pagina > 1:
-                            # Ver comentário equivalente em scrapers/gupy.py: timeout
-                            # de verdade é DIFERENTE de "acabaram as vagas" (isso é
-                            # sinalizado abaixo, quando a página carrega normal mas
-                            # devolve 0 cards). Sem separar os dois, a perda por
-                            # timeout ficava invisível — virava break silencioso
-                            # idêntico ao fim natural da paginação.
+                        corpo = page.inner_text("body")
+                        # MEDIDO (mesma investigação de scrapers/gupy.py): o
+                        # GeekHunter sinaliza "acabaram as vagas" de DUAS
+                        # formas diferentes, e nenhuma delas é um card vazio.
+                        #
+                        #  - busca inteira sem resultado (página 1): renderiza
+                        #    "0 vagas disponíveis";
+                        #  - paginação passou do fim (página > 1): devolve
+                        #    404 "This page could not be found" — a rota
+                        #    ?page=N simplesmente não existe além da última.
+                        #    Reproduzido com 'arquiteto de software' (1 vaga
+                        #    só, então ?page=2 já 404) contra 'desenvolvedor'
+                        #    (10 cards em cada uma das 3 páginas, sem 404).
+                        #
+                        # As duas chegam aqui como timeout, iguais a site
+                        # lento. Antes só a primeira era reconhecida, e mesmo
+                        # assim só na página 1 — o 404 caía no `if pagina > 1`
+                        # e virava WARNING de "falha de carregamento", que é o
+                        # oposto do que estava acontecendo.
+                        if "This page could not be found" in corpo:
+                            logger.info(
+                                f"[GeekHunter] Fim dos resultados de '{termo}': "
+                                f"página {pagina} não existe (404)."
+                            )
+                            sem_resultados = True
+                        elif "0 vagas disponíveis" in corpo:
+                            logger.info(f"[GeekHunter] 0 resultados reais para '{termo}'.")
+                            sem_resultados = True
+                        elif pagina > 1:
+                            # Timeout de verdade: nem card, nem 404, nem texto
+                            # de busca vazia. Aqui o aviso é legítimo — pode
+                            # ter ficado vaga de fora.
                             logger.warning(
                                 f"[GeekHunter] Timeout esperando resultados na página "
                                 f"{pagina} de '{termo}' — parando de paginar por falha "
@@ -77,9 +102,6 @@ class GeekHunterScraper(BaseScraper):
                                 "Pode ter ficado vaga de página seguinte de fora."
                             )
                             break
-                        if "0 vagas disponíveis" in page.inner_text("body"):
-                            logger.info(f"[GeekHunter] 0 resultados reais para '{termo}'.")
-                            sem_resultados = True
                         else:
                             raise
                     if not sem_resultados:

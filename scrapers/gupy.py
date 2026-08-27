@@ -50,15 +50,35 @@ class GupyScraper(BaseScraper):
                     try:
                         page.wait_for_selector("a:has(h3)", timeout=15000)
                     except PlaywrightTimeoutError:
-                        if pagina > 1:
-                            # Timeout de verdade (site lento, bloqueio) —
-                            # DIFERENTE de "acabaram as vagas", que é
-                            # sinalizado abaixo (página carrega normal mas
-                            # devolve 0 cards). Sem essa distinção, um
-                            # timeout na página 2/3 virava break silencioso
-                            # idêntico ao fim natural da paginação, e a vaga
-                            # que estaria nessa página se perdia sem deixar
-                            # rastro nenhum no log.
+                        # MEDIDO: a Gupy NÃO renderiza "a:has(h3)" quando a
+                        # página está vazia — ela renderiza o texto "Nenhum
+                        # resultado foi encontrado" e mais nada. Ou seja, o
+                        # fim natural da paginação chega aqui como timeout,
+                        # exatamente igual a um site lento. Reproduzido com
+                        # 'arquiteto de software': pág. 1 = 12 cards, pág. 2 =
+                        # 6 cards (parcial, última), pág. 3 = 0 cards + o
+                        # texto de vazio.
+                        #
+                        # Por isso o texto de vazio é checado ANTES de julgar
+                        # o timeout, em QUALQUER página. Antes essa checagem
+                        # vinha depois de um `if pagina > 1: warning; break`,
+                        # então só era alcançável na página 1 — e todo fim de
+                        # paginação normal virava um WARNING dizendo
+                        # "parando por falha de carregamento, não por fim
+                        # real dos resultados", que é o oposto do que estava
+                        # acontecendo.
+                        if "Nenhum resultado foi encontrado" in page.inner_text("body"):
+                            logger.info(
+                                f"[Gupy] Fim dos resultados de '{termo}' na página {pagina}."
+                                if pagina > 1 else
+                                f"[Gupy] 0 resultados reais para '{termo}'."
+                            )
+                            sem_resultados = True
+                        elif pagina > 1:
+                            # Timeout de verdade (site lento, bloqueio): a
+                            # página não trouxe card NEM o texto de vazio.
+                            # Aqui o aviso é legítimo — pode ter ficado vaga
+                            # de fora e o log precisa registrar isso.
                             logger.warning(
                                 f"[Gupy] Timeout esperando resultados na página {pagina} de "
                                 f"'{termo}' — parando de paginar por falha de carregamento, "
@@ -66,9 +86,6 @@ class GupyScraper(BaseScraper):
                                 "página seguinte de fora."
                             )
                             break
-                        if "Nenhum resultado foi encontrado" in page.inner_text("body"):
-                            logger.info(f"[Gupy] 0 resultados reais para '{termo}'.")
-                            sem_resultados = True
                         else:
                             raise
                     time.sleep(2 if not sem_resultados else 0)  # dá tempo do React terminar de renderizar
