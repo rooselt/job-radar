@@ -3,16 +3,18 @@
 <!-- ![JobRadar](assets/cover.png) -->
 
 # 📡 JobRadar
-### Monitor Automatizado de Vagas de Dados & BI
+### Monitor Automatizado de Vagas de Engenharia de Software
 
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Playwright](https://img.shields.io/badge/Playwright-Scraping-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
 ![SQLite](https://img.shields.io/badge/SQLite-Banco%20versionado-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Cron-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)
-![Tests](https://img.shields.io/badge/testes-73%20passing-success?style=for-the-badge)
+![Tests](https://img.shields.io/badge/testes-75%20passing-success?style=for-the-badge)
 ![Status](https://img.shields.io/badge/status-em%20produção-success?style=for-the-badge)
 
-**Autora:** Liliam Kezia Oliveira Souza
+**Configuração atual:** Rooselt Adam S. H. de Oliveira — backend .NET / arquitetura, sênior+, 100% remoto
+
+*Motor original por Liliam Kezia Oliveira Souza (perfil Dados & BI, Nordeste). Este fork mantém a engenharia e troca o vocabulário de busca, o alvo de senioridade e a regra de localização.*
 
 </div>
 
@@ -20,17 +22,17 @@
 
 ## 💎 Proposta de valor
 
-> Em cidade pequena, vaga boa de Dados/BI aparece pouco e some rápido — quem checa o board duas vezes por dia perde pra quem checou na primeira hora. **JobRadar** é um sistema de monitoramento contínuo que substitui essa checagem manual: varre **8 fontes** a cada **3 horas**, filtra por cargo/cidade/mercado/idioma com três níveis de confiança, pontua cada vaga por relevância e notifica no Telegram — rodando de graça, sem servidor próprio, 24 horas por dia.
+> Vaga sênior de backend .NET 100% remota aparece em oito boards diferentes, some rápido e vem afogada em ruído de front-end, dados e júnior. **JobRadar** é um sistema de monitoramento contínuo que substitui a checagem manual: varre **8 fontes** a cada **3 horas**, filtra por cargo/modalidade/mercado com três níveis de confiança, pontua cada vaga por relevância (senioridade alta pontua mais) e notifica no Telegram — rodando de graça, sem servidor próprio, 24 horas por dia.
 
 ## 📄 Resumo executivo
 
-Entre 07 e 15 de agosto, o sistema já processou **1.052 vagas únicas**, sem intervenção manual nenhuma — mas os números também expõem os riscos reais da arquitetura atual:
+Números medidos entre 07 e 15 de agosto de 2026, **na configuração anterior (Dados & BI)** — valem como medição da arquitetura, não deste perfil, que ainda não acumulou histórico próprio:
 
 | Achado | Número |
 |---|---|
 | 📊 Vagas processadas (deduplicadas) | **1.052** |
 | 🔗 Concentração numa única fonte (LinkedIn) | **89,5%** |
-| 🧪 Testes automatizados (CI a cada push) | **73** |
+| 🧪 Testes automatizados (CI a cada push) | **75** |
 | 🌎 Fontes monitoradas em paralelo | **8** |
 | ⏱️ Frequência de checagem | **a cada 3h** |
 | 💰 Custo de infraestrutura | **R$ 0** |
@@ -62,23 +64,24 @@ Vaga de alta relevância chega na hora, com motivo da aprovação, nível e link
 | Etapa | O que faz |
 |---|---|
 | **Busca** | Varre as fontes em paralelo, com rodízio de termos pra controlar custo por ciclo |
-| **Filtra** | Cargo (forte / ambíguo + qualificador / ferramenta + cargo), cidade ou mercado remoto, idioma |
-| **Pontua** | Score 0–10 por vaga: cargo, ferramenta, senioridade, mercado, idioma — soma de sinais, sem IA |
+| **Filtra** | Cargo (forte / ambíguo + qualificador / stack + cargo), modalidade remota e mercado aceito (Brasil/LATAM) |
+| **Pontua** | Score 0–10 por vaga: cargo, stack, senioridade, mercado, idioma — soma de sinais, sem IA |
 | **Deduplica** | Por link e por empresa+título, pra pegar a mesma vaga republicada em fonte diferente |
 | **Notifica** | Alta relevância na hora; o resto num resumo diário ranqueado, melhor vaga no topo |
-| **Aprende** | Botão 👍/👎 em cada notificação — feedback vira dado pra medir precisão por fonte e por semana |
+| **Aprende** | Botão 👍/👎 em cada notificação — feedback vira dado pra medir precisão por fonte e por semana (ainda sem reação registrada no banco) |
 
 ## 🏗️ Arquitetura técnica
 
-- **Filtro em 3 níveis de confiança:** cargo inequívoco passa sozinho; cargo ambíguo (ex: "Business Analyst") só conta com qualificador de dados junto no título; ferramenta (ex: "Power BI") só conta com palavra de cargo junto — nada aprova por palavra-chave solta.
-- **Score de relevância sem ML:** 5 sinais conhecidos (cargo, ferramenta, senioridade, mercado, idioma), pesos calibrados contra o histórico real do banco, não chutados.
+- **Filtro em 3 níveis de confiança:** cargo inequívoco passa sozinho ("Arquiteto de Software"); cargo ambíguo (ex: "Desenvolvedor") só conta com qualificador de stack junto no título; stack (ex: "Azure") só conta com palavra de cargo junto — nada aprova por palavra-chave solta.
+- **Score de relevância sem ML:** 5 sinais conhecidos (cargo, stack, senioridade, mercado, idioma), soma simples de pesos. Senioridade alta (Sênior/Especialista/Tech Lead/Arquiteto) pontua bônus; júnior/pleno pontua deságio — nada disso é filtro, só ordena o que já passou.
 - **Zero infraestrutura:** GitHub Actions como motor de cron, SQLite como banco — versionado no próprio Git, o histórico de vagas já vistas *é* o commit.
 - **Resiliente:** nunca marca vaga como "vista" sem confirmar que a notificação saiu; alerta automático se metade das fontes falhar num ciclo; heartbeat diário confirmando que o robô ainda está de pé.
-- **73 testes automatizados em CI:** cada caso documenta um bug real já corrigido nesta base — não é cenário hipotético, é regressão registrada.
+- **75 testes automatizados em CI:** cada caso documenta um bug real já corrigido nesta base — não é cenário hipotético, é regressão registrada.
 
 ## 📁 Estrutura do repositório
 
-obradar/
+```
+jobradar/
 ├── README.md
 ├── requirements.txt
 ├── main.py ← motor único: um ciclo de busca por perfil
@@ -93,12 +96,13 @@ obradar/
 ├── scrapers/ ← um módulo por fonte (LinkedIn, Gupy, Indeed...)
 ├── utils/
 │ └── filtro.py
-├── tests/ ← 73 casos, roda em CI a cada push
+├── tests/ ← 75 casos, roda em CI a cada push
 ├── data/
 │ └── jobs.db ← banco versionado (histórico de dedup)
 └── .github/workflows/
 ├── jobradar.yml ← cron de produção (a cada 3h)
 └── testes.yml ← CI
+```
 
 ## 💻 Como rodar
 
@@ -110,11 +114,13 @@ pip install -r requirements.txt
 python -m playwright install chromium
 ```
 
-Criar `.env` na raiz com `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (via [@BotFather](https://t.me/BotFather)), depois:
+Copiar `.env.example` para `.env` e preencher `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (via [@BotFather](https://t.me/BotFather)), depois:
 
 ```bash
-python main.py --perfil brasil internacional --once
+python main.py --perfil brasil --once
 ```
+
+O perfil `internacional` (LATAM/Ibéria, exige espanhol/português) continua definido em `config_intl.py` e coberto por testes, mas não roda — a configuração atual é só mercado Brasil.
 
 ## 🧪 Testes
 
@@ -122,12 +128,12 @@ python main.py --perfil brasil internacional --once
 pytest tests/ -v
 ```
 
-73 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
+75 casos parametrizados, cobrindo a camada de filtro, o parsing de callback do Telegram e o relatório de precisão — todos rodando automaticamente a cada push via GitHub Actions.
 
 ---
 
 <div align="center">
 
-*Case de portfólio em automação de dados — Python, Playwright, SQLite, GitHub Actions e engenharia de filtro sem ML.*
+*Case de portfólio em automação — Python, Playwright, SQLite, GitHub Actions e engenharia de filtro sem ML.*
 
 </div>

@@ -6,7 +6,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timezone
 
-from config import DIGEST_HORA_UTC, INTERVALO_MINUTOS, LIMIAR_DIGEST_IMEDIATO
+from config import INTERVALO_MINUTOS, LIMIAR_DIGEST_IMEDIATO
 from database.database import (
     BancoVazioSuspeito,
     definir_metadado,
@@ -142,36 +142,30 @@ def _enviar_digest_diario(perfil: Perfil):
     que ficou digest_pendente=1 desde o último envio (pode ser de vários
     ciclos de 3h) e manda ranqueado, melhor primeiro.
 
-    Disparo: no ciclo cujo horário UTC bate com DIGEST_HORA_UTC (0 =
-    meia-noite UTC = 21h em Brasília) — o cron já passa por essa hora
-    exata todo dia, não precisa de agendamento à parte. Mesma lógica de
-    "só uma vez por dia" do heartbeat (data salva em metadados), mas com
-    um reforço: se por qualquer motivo o ciclo exato de DIGEST_HORA_UTC
-    falhar/pular um dia inteiro, manda no primeiro ciclo depois de 24h
-    sem envio — não deixa a fila crescer indefinidamente esperando um
-    horário exato que pode não voltar a bater certo (ex: workflow atrasado
-    pelo GitHub Actions naquele dia).
+    Disparo: primeiro ciclo que terminar depois da virada do dia UTC —
+    mesma lógica de "só uma vez por dia" do heartbeat (data salva em
+    metadados), sem hora fixa.
+
+    MEDIDO: a versão anterior exigia `agora.hour == DIGEST_HORA_UTC` (0) e
+    esse gate NUNCA batia — o ciclo leva ~2h e sempre termina às 02:xx
+    UTC, nunca às 00:xx. O fallback "atrasado" que deveria cobrir isso
+    exigia `ultimo_envio_str is not None`, que só vira não-nulo depois de
+    um envio bem-sucedido: deadlock. Resultado real no jobs.db: nenhuma
+    chave digest_ultimo_dia_* existia e 377 vagas ficaram presas com
+    digest_pendente=1, ~94% de tudo que o bot achou, engolido em silêncio.
+    Sem hora fixa não há gate pra nunca bater.
     """
     chave = f"digest_ultimo_dia_{perfil.chave}"
     hoje = date.today()
-    agora = datetime.now(timezone.utc)
 
-    ultimo_envio_str = obter_metadado(chave)
-    se_ja_enviou_hoje = ultimo_envio_str == hoje.isoformat()
+    se_ja_enviou_hoje = obter_metadado(chave) == hoje.isoformat()
     if se_ja_enviou_hoje:
-        return
-
-    horario_certo = agora.hour == DIGEST_HORA_UTC
-    atrasado = ultimo_envio_str is not None and (
-        hoje - date.fromisoformat(ultimo_envio_str)
-    ).days >= 2
-    if not (horario_certo or atrasado):
         return
 
     vagas_pendentes = obter_vagas_pendentes_digest(perfil.chave)
     if not vagas_pendentes:
-        # Marca mesmo sem vaga nenhuma — senão o "atrasado" acima dispara
-        # todo ciclo seguinte até aparecer alguma vaga pendente de novo.
+        # Marca mesmo sem vaga nenhuma — senão todo ciclo seguinte do dia
+        # volta a consultar a fila esperando aparecer alguma vaga.
         definir_metadado(chave, hoje.isoformat())
         return
 

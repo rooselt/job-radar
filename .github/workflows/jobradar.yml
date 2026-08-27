@@ -43,12 +43,12 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        # Antes disso só o perfil Brasil rodava aqui — main_intl.py existia
-        # no repositório mas nunca foi chamado pelo workflow, então o
-        # pipeline internacional nunca rodou de verdade em produção. Agora é
-        # um projeto só com dois perfis selecionáveis (ver perfis.py); os
-        # dois rodam na mesma execução/commit, um após o outro.
-        run: python main.py --perfil brasil internacional --once
+        # Só o perfil "brasil" roda: a decisão atual é mercado BR apenas.
+        # O perfil "internacional" (config_intl.py + PERFIL_INTL em
+        # perfis.py) continua definido e testado, só não é invocado —
+        # religar é adicionar "internacional" na linha abaixo. Sem ele o
+        # ciclo cai quase pela metade (3 fontes x 10 termos a menos).
+        run: python main.py --perfil brasil --once
 
       - name: Salvar vagas já vistas (evita notificação duplicada)
         run: |

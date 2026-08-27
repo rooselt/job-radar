@@ -628,7 +628,13 @@ _NIVEIS_SENIORIDADE = [
     ("Pleno", (r"pleno", r"pl\.?")),
     ("Sênior", (r"senior", r"sr\.?", r"sênior")),
     ("Especialista", (r"especialista", r"specialist")),
-    ("Liderança", (r"coordenador", r"coordenadora", r"gerente", r"manager", r"head")),
+    # "tech lead"/"arquiteto"/"staff"/"principal" entram aqui porque são o
+    # ALVO deste perfil — sem eles, "Tech Lead .NET" e "Arquiteto de
+    # Soluções" caíam em "Não especificado" e ficavam com peso neutro em
+    # vez do bônus de senioridade.
+    ("Liderança", (r"coordenador", r"coordenadora", r"gerente", r"manager", r"head",
+                   r"tech lead", r"l[ií]der t[eé]cnico", r"arquiteto", r"arquiteta",
+                   r"architect", r"staff", r"principal")),
 ]
 
 
@@ -730,29 +736,28 @@ _PESO_CARGO_AMBIGUO = 2
 _PESO_FERRAMENTA = 2
 _PESO_SENIORIDADE_ALVO = 2
 _PESO_SENIORIDADE_NEUTRA = 1  # título sem nível classificável — não penaliza por falta de informação
-# MEDIDO: classificar sem excluir (ver docstring de _detectar_senioridade)
-# continua certo, mas 0 pontos pra Sênior/Especialista/Liderança tratava
-# "acima do alvo" igual a "não deu pra saber" — as duas ficavam empatadas
-# no score. Medido contra as 780 vagas do jobs.db real: 25% classificam
-# Sênior/Especialista/Liderança, 65% não especificado, só 5,5%
-# Júnior/Pleno — sem separar os dois grupos de zero pontos, a maioria das
-# vagas realmente no alvo não se destacava de vaga acima do alvo nenhuma.
-# Peso negativo simétrico ao bônus (+2/-2): puxa pra baixo sem excluir —
-# a vaga continua passando por combina_com() e notificando (imediata ou no
-# digest), só cai mais no ranking.
+# Deságio pra nível FORA do alvo (ver _NIVEIS_SENIORIDADE_ACIMA_DO_ALVO —
+# hoje Júnior/Pleno/Estágio, o nome da constante é herdado de quando o
+# alvo era o inverso). Existe porque 0 ponto tratava "fora do alvo" igual
+# a "não deu pra saber": as duas empatavam no score e a vaga realmente no
+# alvo não se destacava. Peso negativo simétrico ao bônus (+2/-2): puxa
+# pra baixo sem excluir — a vaga continua passando por combina_com() e
+# notificando (imediata ou no digest), só cai mais no ranking.
 _PESO_SENIORIDADE_ACIMA_DO_ALVO = -2
 _PESO_MERCADO = 2
 _PESO_MERCADO_NAO_CONFIRMADO = 1  # remota sem mercado declarado no texto (aceita por padrão, sem confirmar)
 _PESO_IDIOMA = 1
 
-# Prioridade definida pelo usuário: Júnior e Pleno pontuam o teto de
-# senioridade (bônus). Sênior/Especialista/Liderança pontuam negativo
-# (acima do alvo, deságio). Estágio/Trainee fica neutro — nem é o alvo nem
-# é o problema de "vaga tolerável demais" que motivou o deságio (volume
-# desprezível: 0,3% da base). Nada disso é filtro — a vaga ainda notifica,
-# só muda a posição no ranking (imediata vs. digest, topo vs. fundo).
-_NIVEIS_SENIORIDADE_ALVO = {"Júnior", "Pleno"}
-_NIVEIS_SENIORIDADE_ACIMA_DO_ALVO = {"Sênior", "Especialista", "Liderança"}
+# Prioridade definida pelo usuário: Sênior, Especialista e Liderança
+# técnica (Tech Lead/Arquiteto/Staff/Principal) pontuam o teto de
+# senioridade (bônus). Júnior/Pleno/Estágio pontuam negativo (abaixo do
+# alvo, deságio) — os nomes das constantes (_ALVO / _ACIMA_DO_ALVO) e os
+# pesos (+2/-2) são os do dono anterior deste radar, que buscava o
+# contrário; só o conteúdo dos conjuntos inverteu. Nada disso é filtro — a
+# vaga ainda notifica, só muda a posição no ranking (imediata vs. digest,
+# topo vs. fundo).
+_NIVEIS_SENIORIDADE_ALVO = {"Sênior", "Especialista", "Liderança"}
+_NIVEIS_SENIORIDADE_ACIMA_DO_ALVO = {"Júnior", "Pleno", "Estágio/Trainee"}
 
 
 @dataclass
@@ -1098,7 +1103,7 @@ class Job:
         elif nivel == "Não especificado" or nivel.startswith("Nível "):
             pontos_senioridade = _PESO_SENIORIDADE_NEUTRA
         else:
-            pontos_senioridade = 0  # Estágio/Trainee — nem alvo nem acima, neutro-baixo
+            pontos_senioridade = 0  # nível novo em _NIVEIS_SENIORIDADE, ainda não classificado nos dois grupos
 
         if not av.bate_remoto or av.mercado_confirmado:
             pontos_mercado = _PESO_MERCADO

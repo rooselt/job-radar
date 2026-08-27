@@ -149,17 +149,22 @@ CASOS_COMBINA_COM = [
     # país hispanofalante já é o próprio sinal.
     ("mercado-confirmado-dispensa-idioma-no-titulo", "Senior Data Analyst", "Remote - Espanha", "Remoto", PERFIL_INTL, True),
 
-    # Perfil Brasil: cargo e cidade são checados em campos separados
-    # (título vs. local) — cidade fora da lista aceita barra mesmo com
-    # cargo batendo.
-    ("cidade-fora-da-lista-barrada", "Analista de Dados", "Nova York", "Presencial", PERFIL_BR, False),
-    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-forte-cidade-aceita-passa", "Analista de Dados Pleno", "Recife, PE", "Presencial", PERFIL_BR, True),
-    # keywords_ambiguo (ex: "Business Analyst") só conta com qualificador
-    # de dados junto no título — sozinho é ruído de outra área (RH,
-    # finanças).
-    ("cargo-ambiguo-sem-qualificador-barrado", "Business Analyst", "Recife, PE", "Presencial", PERFIL_BR, False),
-    ("cargo-ambiguo-com-qualificador-passa", "Business Analyst com SQL", "Recife, PE", "Presencial", PERFIL_BR, True),
+    # Perfil Brasil: cargo e localização são checados em campos separados
+    # (título vs. local/modalidade). CIDADES hoje é só ["Remoto"], então
+    # presencial/híbrido é barrado em qualquer cidade, mesmo com cargo
+    # batendo perfeitamente.
+    ("presencial-barrado-mesmo-com-cargo-forte", "Desenvolvedor .NET Sênior", "Belo Horizonte, MG", "Presencial", PERFIL_BR, False),
+    ("hibrido-barrado", "Arquiteto de Software", "São Paulo, SP", "Híbrido", PERFIL_BR, False),
+    ("cargo-fora-do-escopo-barrado", "Vendedor Externo", "Remoto", "Remoto", PERFIL_BR, False),
+    ("cargo-forte-remoto-passa", "Desenvolvedor .NET Sênior", "Remoto", "Remoto", PERFIL_BR, True),
+    # keywords_ambiguo (ex: "Desenvolvedor") só conta com qualificador de
+    # stack junto no título — sozinho é ruído de outra área (front-end,
+    # mobile, dados).
+    ("cargo-ambiguo-sem-qualificador-barrado", "Desenvolvedor", "Remoto", "Remoto", PERFIL_BR, False),
+    ("cargo-ambiguo-com-qualificador-passa", "Desenvolvedor Sênior C#", "Remoto", "Remoto", PERFIL_BR, True),
+    # Mercado declarado incompatível é barrado mesmo sendo remoto e com
+    # cargo forte (MERCADOS_REMOTO_ACEITOS = Brasil/LATAM).
+    ("remoto-us-only-barrado", "Backend Engineer", "Remote — US only", "Remoto", PERFIL_BR, False),
 ]
 
 
