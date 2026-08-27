@@ -1,5 +1,6 @@
 
 import json
+import time
 
 import requests
 
@@ -9,8 +10,11 @@ from logger import get_logger
 
 logger = get_logger()
 
+# Segundos entre partes do digest — ver enviar_digest.
+PAUSA_ENTRE_PARTES_S = 1.2
 
-def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
+
+def enviar_mensagem(texto: str, reply_markup: dict | None = None, tentativas_restantes: int = 3) -> bool:
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logger.warning("Telegram não configurado (token/chat_id ausentes no .env). Pulando envio.")
         return False
@@ -47,6 +51,27 @@ def enviar_mensagem(texto: str, reply_markup: dict | None = None) -> bool:
     except requests.HTTPError as e:
         status = e.response.status_code if e.response is not None else None
         motivo = e.response.reason if e.response is not None else "sem detalhe"
+        # MEDIDO: 429 é o único erro do Telegram que se resolve sozinho —
+        # ele diz no corpo por quantos segundos esperar (parameters.
+        # retry_after) e depois aceita a mesma mensagem. Tratar igual aos
+        # outros (return False) era caro no digest: enviar_digest usa
+        # all(), que curto-circuita, então um 429 na parte 5 de 16 abortava
+        # as 11 restantes, mantinha a fila inteira pendente e fazia o ciclo
+        # seguinte reenviar da parte 1 — duplicando o que já tinha chegado
+        # e travando de novo no mesmo ponto, a cada 3h.
+        if status == 429 and tentativas_restantes > 0:
+            espera = 5
+            try:
+                espera = int(e.response.json()["parameters"]["retry_after"])
+            except (ValueError, KeyError, TypeError):
+                pass
+            espera = min(espera, 60) + 1
+            logger.warning(
+                f"Telegram pediu pra esperar (HTTP 429). Repetindo em {espera}s "
+                f"({tentativas_restantes} tentativa(s) restante(s))."
+            )
+            time.sleep(espera)
+            return enviar_mensagem(texto, reply_markup, tentativas_restantes - 1)
         logger.error(f"Erro ao enviar mensagem no Telegram: HTTP {status} ({motivo})")
         return False
     except requests.RequestException as e:
@@ -206,7 +231,24 @@ def enviar_digest(vagas: list[tuple], rotulo_perfil: str) -> bool:
     Preferir duplicar uma parte a perder vaga que nunca chegou a notificar."""
     if not vagas:
         return True
-    return all(enviar_mensagem(mensagem) for mensagem in montar_digest(vagas, rotulo_perfil))
+
+    # PAUSA_ENTRE_PARTES: o Telegram aceita ~1 mensagem/s por chat. Um
+    # digest de backlog é grande — o primeiro ciclo real gerou 294 vagas =
+    # 16 partes — e mandar as 16 em rajada é pedir 429. A pausa custa ~20s
+    # num ciclo que leva dezenas de minutos, e evita o retry com duplicata
+    # descrito em enviar_mensagem.
+    partes = montar_digest(vagas, rotulo_perfil)
+    todas_ok = True
+    for i, mensagem in enumerate(partes):
+        if i:
+            time.sleep(PAUSA_ENTRE_PARTES_S)
+        # Sem short-circuit de propósito (era all(), que abortava o resto):
+        # se uma parte falhar, as outras ainda tentam — a fila só é limpa
+        # com todas confirmadas, então o retry seguinte é o mesmo, mas o
+        # usuário já recebe o máximo possível agora em vez de parar no meio.
+        if not enviar_mensagem(mensagem):
+            todas_ok = False
+    return todas_ok
 
 
 def _chamar_api_telegram(metodo: str, payload: dict) -> dict | None:
