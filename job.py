@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from urllib.parse import urlsplit, urlunsplit
 import hashlib
 import re
@@ -619,6 +620,94 @@ def extrair_data_publicacao(texto_card: str) -> str:
     return ""
 
 
+# Vaga aberta há mais de DIAS_VAGA_ANTIGA não notifica (nem imediata, nem
+# no digest) — ver Job.publicacao_antiga e o funil em main.py.
+DIAS_VAGA_ANTIGA = 30
+
+_MESES_PT = {
+    "janeiro": 1, "fevereiro": 2, "marco": 3, "abril": 4, "maio": 5, "junho": 6,
+    "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12,
+}
+_MULTIPLICADOR_RELATIVO = {"dia": 1, "semana": 7, "mes": 30, "ano": 365}
+
+_RELATIVO = re.compile(r"ha\s+(\d+)\s+(dia|semana|mes|ano)")
+_DATA_NUMERICA = re.compile(r"(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?")
+_DATA_EXTENSO = re.compile(r"(\d{1,2})\s+de\s+(\w+)(?:\s+de\s+(\d{2,4}))?")
+
+
+def idade_em_dias(publicado_em: str, hoje: date | None = None) -> int | None:
+    """Idade da vaga em dias, a partir do texto cru que a fonte expôs.
+
+    None = não dá pra saber (fonte não expõe data, ou formato não
+    reconhecido). None NÃO é "antiga" nem "nova" — quem chama decide, e a
+    decisão atual é não penalizar por ausência de informação: MEDIDO, o
+    LinkedIn (352 de 678 vagas do primeiro ciclo real, a maior fonte de
+    longe) e o We Work Remotely não expõem data nenhuma no card de busca.
+    Tratar "sem data" como antiga descartaria 58% do funil.
+
+    Formatos cobertos, todos vistos em produção:
+      "há 3 dias" / "há 2 semanas" / "há 7 meses" / "há 1 ano"  (relativo)
+      "hoje" / "ontem"
+      "Publicada em: 14/08/2026"   (Gupy — dd/mm/aaaa, exato)
+      "Publicada em 25/08"         (Catho — dd/mm SEM ano)
+      "11 de agosto de 2026"       (mês por extenso)
+
+    Sem ano (o caso da Catho), assume a ocorrência mais recente daquele
+    dia/mês que NÃO seja futura — "25/08" visto em 28/08/2026 é deste ano
+    (3 dias); "25/12" visto em 28/08/2026 é do ano passado (246 dias), não
+    daqui a 4 meses. Sem isso, toda vaga de dezembro vista em janeiro
+    viraria idade negativa.
+    """
+    if not publicado_em:
+        return None
+    texto = _normalizar(publicado_em)
+    hoje = hoje or date.today()
+
+    if "hoje" in texto:
+        return 0
+    if "ontem" in texto:
+        return 1
+
+    m = _RELATIVO.search(texto)
+    if m:
+        return int(m.group(1)) * _MULTIPLICADOR_RELATIVO[m.group(2)]
+
+    dia = mes = ano = None
+    m = _DATA_NUMERICA.search(texto)
+    if m:
+        dia, mes, ano = int(m.group(1)), int(m.group(2)), m.group(3)
+    else:
+        m = _DATA_EXTENSO.search(texto)
+        if m and m.group(2) in _MESES_PT:
+            dia, mes, ano = int(m.group(1)), _MESES_PT[m.group(2)], m.group(3)
+    if dia is None:
+        return None
+
+    if ano:
+        ano = int(ano)
+        if ano < 100:  # "26" -> 2026
+            ano += 2000
+    else:
+        ano = hoje.year
+
+    try:
+        publicada = date(ano, mes, dia)
+    except ValueError:  # 31/02, mês 13 e afins — formato reconhecido, data impossível
+        return None
+
+    if publicada > hoje:
+        # Sem ano declarado, data futura só pode ser do ano anterior. COM
+        # ano declarado, data futura é erro da fonte — não inventa idade.
+        if m.group(3):
+            return None
+        try:
+            publicada = date(ano - 1, mes, dia)
+        except ValueError:
+            return None
+
+    return (hoje - publicada).days
+
+
 # Ordem importa: do mais específico pro mais genérico. Título não é
 # filtrado por senioridade — só é classificado, pra decidir isso na hora de
 # ler a notificação, não em deixar a vaga passar ou não.
@@ -744,6 +833,16 @@ _PESO_SENIORIDADE_NEUTRA = 1  # título sem nível classificável — não penal
 # pra baixo sem excluir — a vaga continua passando por combina_com() e
 # notificando (imediata ou no digest), só cai mais no ranking.
 _PESO_SENIORIDADE_ACIMA_DO_ALVO = -2
+# Deságio por idade da vaga. Só PENALIZA (nunca bonifica) de propósito:
+# assim o teto do score continua 10, sem recalibrar LIMIAR_DIGEST_IMEDIATO.
+# Vaga acima de DIAS_VAGA_ANTIGA nem chega aqui (não notifica), então o
+# -2 abaixo cobre só a faixa "envelhecendo": ainda vale mandar, mas não
+# na frente de uma vaga da semana. Sem data (LinkedIn, We Work Remotely)
+# = 0: não penaliza por ausência de informação, mesma regra da
+# senioridade neutra.
+_PESO_PUBLICACAO_ENVELHECENDO = -2
+_DIAS_PUBLICACAO_FRESCA = 14
+
 _PESO_MERCADO = 2
 _PESO_MERCADO_NAO_CONFIRMADO = 1  # remota sem mercado declarado no texto (aceita por padrão, sem confirmar)
 _PESO_IDIOMA = 1
@@ -866,8 +965,15 @@ class Job:
 
     @property
     def publicacao_antiga(self) -> bool:
-        """True quando publicado_em bate um formato relativo em MESES ou
-        ANOS (nunca dias/semanas) — ver _PADRAO_DATA_RELATIVA.
+        """True quando a vaga está aberta há mais de DIAS_VAGA_ANTIGA (30)
+        dias. Vaga assim NÃO notifica — nem imediata, nem no digest (ver o
+        funil em main.py).
+
+        MEDIDO: a versão anterior só olhava se o texto continha "mes"/"ano",
+        o que cobria o formato relativo ("há 7 meses") e deixava passar o
+        ABSOLUTO — as vagas da Gupy com "Publicada em: 27/07/2026" e
+        "09/06/2026" (1 a 3 meses de idade) contavam como recentes. Agora a
+        idade é calculada de verdade, ver idade_em_dias().
 
         MEDIDO: vaga real capturada no jobs.db (Solides, "ANALISTA DE
         DADOS / MIGRAÇÃO - PLENO") com publicado_em = "há 7 meses" —
@@ -888,8 +994,17 @@ class Job:
         também sempre False — só sinal INEQUÍVOCO de "há muito tempo"
         conta, não estimativa por ausência de dado.
         """
-        texto = _normalizar(self.publicado_em)
-        return "mes" in texto or "ano" in texto
+        idade = self.idade_dias
+        # >= e não >: fonte arredonda pra baixo — uma vaga de 45 dias
+        # aparece como "há 1 mês" (= 30 dias aqui). Com > 30 esse caso, que
+        # é justamente o alvo da regra, passava batido.
+        return idade is not None and idade >= DIAS_VAGA_ANTIGA
+
+    @property
+    def idade_dias(self) -> int | None:
+        """Dias desde a publicação, ou None quando a fonte não expõe data.
+        Ver idade_em_dias()."""
+        return idade_em_dias(self.publicado_em)
 
     @property
     def escopo_remoto(self) -> set[str]:
@@ -1105,6 +1220,13 @@ class Job:
         else:
             pontos_senioridade = 0  # nível novo em _NIVEIS_SENIORIDADE, ainda não classificado nos dois grupos
 
+        idade = self.idade_dias
+        pontos_publicacao = (
+            _PESO_PUBLICACAO_ENVELHECENDO
+            if idade is not None and idade > _DIAS_PUBLICACAO_FRESCA
+            else 0
+        )
+
         if not av.bate_remoto or av.mercado_confirmado:
             pontos_mercado = _PESO_MERCADO
         else:
@@ -1112,9 +1234,13 @@ class Job:
 
         pontos_idioma = _PESO_IDIOMA if av.idioma_bateu_titulo else 0
 
-        return (
+        # max(…, 0): o deságio de idade/senioridade nunca leva o score a
+        # negativo — 0 já é o fundo do ranking, número negativo só
+        # confundiria a leitura das estrelas na notificação.
+        return max(
             pontos_cargo + pontos_ferramenta + pontos_senioridade
-            + pontos_mercado + pontos_idioma
+            + pontos_mercado + pontos_idioma + pontos_publicacao,
+            0,
         )
 
     def motivo_aprovacao(self, regras: RegrasFiltro) -> str:

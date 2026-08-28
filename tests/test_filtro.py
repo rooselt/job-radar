@@ -22,7 +22,9 @@ virar asserção, não deduzido lendo o comentário.
 
 import pytest
 
-from job import Job, extrair_escopo_remoto
+from datetime import date, timedelta
+
+from job import Job, extrair_escopo_remoto, idade_em_dias
 from perfis import PERFIL_BR, PERFIL_INTL
 
 
@@ -202,9 +204,20 @@ CASOS_PUBLICACAO_ANTIGA = [
     # Sem dado nenhum (fonte não expõe) -- não dá pra afirmar "antiga" por
     # ausência de informação.
     ("vazio-nao-e-antiga", "", False),
-    # Formato absoluto SEM ano -- não dá pra calcular idade sem saber o
-    # ano, então fica False de propósito (não arrisca adivinhar).
-    ("absoluto-sem-ano-nao-e-antiga", "Publicada em 11/08", False),
+    # Formato absoluto: a idade é calculada de verdade (ver idade_em_dias),
+    # inclusive sem ano declarado. Datas montadas RELATIVAS a hoje, não
+    # fixas -- uma data fixa aqui vira teste que quebra sozinho quando o
+    # calendário anda (era o caso de "Publicada em 11/08", que passava em
+    # agosto e falharia em outubro).
+    ("absoluto-de-ontem-nao-e-antiga",
+     f"Publicada em {(date.today() - timedelta(days=1)):%d/%m/%Y}", False),
+    ("absoluto-de-60-dias-e-antiga",
+     f"Publicada em {(date.today() - timedelta(days=60)):%d/%m/%Y}", True),
+    # Borda exata da regra: DIAS_VAGA_ANTIGA = 30, comparação é >=.
+    ("borda-29-dias-nao-e-antiga",
+     f"Publicada em {(date.today() - timedelta(days=29)):%d/%m/%Y}", False),
+    ("borda-30-dias-e-antiga",
+     f"Publicada em {(date.today() - timedelta(days=30)):%d/%m/%Y}", True),
 ]
 
 
@@ -220,3 +233,46 @@ def test_publicacao_antiga(nome, publicado_em, esperado):
         publicado_em=publicado_em,
     )
     assert job.publicacao_antiga == esperado
+
+
+# ---------------------------------------------------------------------------
+# idade_em_dias(publicado_em, hoje) -> int | None
+#
+# Função pura com `hoje` injetável de propósito: sem isso todo caso vira
+# dependente do calendário. Cada formato abaixo foi visto em produção --
+# ver a contagem por fonte no docstring da função (LinkedIn e We Work
+# Remotely não expõem data nenhuma, Gupy manda com ano, Catho sem).
+# ---------------------------------------------------------------------------
+
+_HOJE = date(2026, 8, 28)
+
+CASOS_IDADE = [
+    ("sem-data-e-desconhecida", "", None),
+    ("texto-sem-data-e-desconhecido", "Contratando agora", None),
+    ("hoje", "hoje", 0),
+    ("ontem", "ontem", 1),
+    ("relativo-dias", "há 3 dias", 3),
+    ("relativo-semanas", "há 2 semanas", 14),
+    ("relativo-meses", "há 7 meses", 210),
+    ("relativo-ano", "há 1 ano", 365),
+    # Gupy: dd/mm/aaaa, idade exata.
+    ("gupy-com-ano-recente", "Publicada em: 27/08/2026", 1),
+    ("gupy-com-ano-um-mes", "Publicada em: 27/07/2026", 32),
+    ("gupy-com-ano-tres-meses", "Publicada em: 09/06/2026", 80),
+    # Catho: dd/mm sem ano -> assume a ocorrência mais recente NÃO futura.
+    ("catho-sem-ano-deste-ano", "Publicada em 25/08", 3),
+    ("catho-sem-ano-futura-vira-ano-passado", "Publicada em 25/12", 246),
+    ("mes-por-extenso", "Publicada em 11 de agosto de 2026", 17),
+    # Data impossível e data futura COM ano declarado: não inventa idade.
+    ("data-impossivel-e-desconhecida", "Publicada em: 31/02/2026", None),
+    ("futura-com-ano-e-desconhecida", "Publicada em: 30/09/2026", None),
+]
+
+
+@pytest.mark.parametrize(
+    "nome,publicado_em,esperado",
+    CASOS_IDADE,
+    ids=[c[0] for c in CASOS_IDADE],
+)
+def test_idade_em_dias(nome, publicado_em, esperado):
+    assert idade_em_dias(publicado_em, _HOJE) == esperado
