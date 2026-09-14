@@ -2,7 +2,7 @@ name: JobRadar
 
 on:
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch: {}
 
 concurrency:
@@ -22,7 +22,7 @@ jobs:
     # o run seguinte fica na fila esperando o anterior liberar o grupo. 150
     # min dá folga real sobre a duração medida do ciclo (~1h30-2h com toda a
     # paginação e a passada dupla do LinkedIn) e ainda fica abaixo do
-    # intervalo do cron (3h), então um run truncado nunca empilha em cima
+    # intervalo do cron (6h), então um run truncado nunca empilha em cima
     # do próximo agendado.
     timeout-minutes: 150
     steps:
